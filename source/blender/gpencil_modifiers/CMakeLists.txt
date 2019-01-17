@@ -26,10 +26,17 @@ set(INC
 	../blenlib
 	../blenfont
 	../depsgraph
+	#LANPR
+	../gpu
+	../draw/intern
+	../blentranslation
+	../windowmanager
+	#-----
 	../makesdna
 	../makesrna
 	../bmesh
 	../render/extern/include
+
 	../../../intern/elbeem/extern
 	../../../intern/guardedalloc
 	../../../intern/eigen

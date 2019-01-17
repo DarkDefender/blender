@@ -68,6 +68,19 @@
 #include "MOD_gpencil_util.h"
 #include "MOD_gpencil_modifiertypes.h"
 
+#include "../../draw/engines/lanpr/lanpr_all.h"
+
+static BMVert* split_edge_and_move(BMesh *bm, BMEdge *edge, const float new_pos[3]){
+	//Split edge one time and move the created vert to new_pos
+	BMVert *vert;
+
+	vert = bmesh_kernel_split_edge_make_vert(bm, edge->v1, edge, NULL);
+
+	copy_v3_v3(vert->co, new_pos);
+
+	return vert;
+}
+
 static void initData(GpencilModifierData *md)
 {
 	StrokeGpencilModifierData *gpmd = (StrokeGpencilModifierData *)md;
@@ -80,14 +93,21 @@ static void copyData(const GpencilModifierData *md, GpencilModifierData *target)
 }
 
 static void generate_geometry(
-        GpencilModifierData *md, Depsgraph *UNUSED(depsgraph),
+        GpencilModifierData *md, Depsgraph *depsgraph,
         Object *ob, bGPDlayer *gpl, bGPDframe *gpf)
 {
 	StrokeGpencilModifierData *gpmd = (StrokeGpencilModifierData *)md;
+	Scene *scene = DEG_get_evaluated_scene(depsgraph);
+	LANPR_RenderBuffer *rb = scene->lanpr.render_buffer;
 
 	if( gpmd->object == NULL ){
 		printf("NULL object!\n");
     	return;
+	}
+
+	if( rb == NULL ){
+		printf("NULL LANPR rb!\n");
+		return;
 	}
 
 	int color_idx = 0;
@@ -108,14 +128,56 @@ static void generate_geometry(
 			.cd_mask_extra = CD_MASK_ORIGINDEX,
 			});
 
- 	BMVert *vert;
+	//Split countour lines at occlution points and deselect occluded segment
+	LANPR_RenderLine *rl;
+	LANPR_RenderLineSegment *rls, *irls;
+	for (rl = rb->AllRenderLines.first; rl; rl = rl->Item.pNext) {
+		BMEdge *e = BM_edge_at_index_find(bm, rl->edge_idx);
+		BMVert *v1 = e->v1; //Segment goes from v1 to v2
+		BMVert *v2 = e->v2;
+
+		BMVert *cur_vert = v1;
+		for (rls = rl->Segments.first; rls; rls = rls->Item.pNext) {
+			irls = rls->Item.pNext;
+
+			if (rls->OcclusionLevel != 0) {
+				BM_elem_flag_disable(cur_vert, BM_ELEM_SELECT);
+			}
+
+			if (!irls) {
+				break;
+			}
+
+			//safety reasons
+			CLAMP(rls->at, 0, 1);
+			CLAMP(irls->at, 0, 1);
+
+			if (irls->at == 1.0f){
+				if (irls->OcclusionLevel != 0) {
+					BM_elem_flag_disable(v2, BM_ELEM_SELECT);
+				}
+				break;
+			}
+
+			float split_pos[3];
+
+			interp_v3_v3v3(split_pos, v1->co, v2->co, irls->at);
+
+			cur_vert = split_edge_and_move(bm, e, split_pos);
+
+			e = BM_edge_exists(cur_vert, v2);
+		}
+	}
+
+	//Chain together strokes
+	BMVert *vert;
 	BMIter iter;
 
 	BM_ITER_MESH (vert, &iter, bm, BM_VERTS_OF_MESH) {
 
         //Have we already used this vert?
 		if(!BM_elem_flag_test(vert, BM_ELEM_SELECT)){
-        	continue;
+			continue;
 		}
 
 		BMVert *prepend_vert = NULL;

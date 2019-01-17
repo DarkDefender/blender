@@ -469,6 +469,7 @@ typedef struct LANPR_RenderLine {
 	struct LANPR_RenderTriangle *TL, *TR;
 	ListBase Segments;
 	//tnsEdge*       Edge;//should be edge material
+	uint32_t edge_idx;
 	//tnsRenderTriangle* Testing;//Should Be tRT** Testing[NumOfThreads]
 	char MinOcclude;
 	char Flags; // also for line type determination on chainning
