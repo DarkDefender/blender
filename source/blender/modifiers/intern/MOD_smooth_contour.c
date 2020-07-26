@@ -83,8 +83,14 @@
 
 #include "../../blenkernel/intern/subdiv_converter.h"
 
-#include "PIL_time.h"
-#include "PIL_time_utildefines.h"
+// #define DEBUG_TIME
+
+#ifdef DEBUG_TIME
+#  include "PIL_time.h"
+#  include "PIL_time_utildefines.h"
+#endif
+
+// #define DEBUG_COLORIZE
 
 // TODO Instead of doing bisection search, perhaps we could use newton rapson to find the roots
 // faster and if fewer steps.
@@ -4330,6 +4336,7 @@ static void optimization(MeshData *m_d)
     }
   }
 
+#ifdef DEBUG_COLORIZE
   // Debug color
   {
     int face_i;
@@ -4344,6 +4351,7 @@ static void optimization(MeshData *m_d)
       inface->face->mat_nr = 4;
     }
   }
+#endif
 
   // Cleanup
   BLI_buffer_free(&inco_faces);
@@ -4528,15 +4536,16 @@ static Mesh *mybmesh_do(Mesh *mesh, SmoothContourModifierData *mmd, float cam_lo
                                 .cd_mask_extra = CD_MASK_ORIGINDEX,
                             });
 
+#ifdef DEBUG_TIME
   TIMEIT_START(quad_check);
+#endif
 
   // TODO use this to check if we need to subdivide the mesh to get a quad mesh.
   {
     BMIter iter;
-    BMFace *f, *f_next;
+    BMFace *f;
     int sides = 4;
-    /* use the mutable iterator so we can remove data as its looped over */
-    BM_ITER_MESH_MUTABLE (f, f_next, &iter, bm, BM_FACES_OF_MESH) {
+    BM_ITER_MESH (f, &iter, bm, BM_FACES_OF_MESH) {
       if (f->len != sides) {
         quad_mesh = false;
         break;
@@ -4545,9 +4554,11 @@ static Mesh *mybmesh_do(Mesh *mesh, SmoothContourModifierData *mmd, float cam_lo
   }
 
   if (!quad_mesh) {
+#ifdef DEBUG_COLORIZE
     if (mmd->camera_ob != NULL) {
       debug_colorize(bm, cam_loc);
     }
+#endif
 
     result = BKE_mesh_from_bmesh_for_eval_nomain(bm, NULL, mesh);
 
@@ -4557,9 +4568,11 @@ static Mesh *mybmesh_do(Mesh *mesh, SmoothContourModifierData *mmd, float cam_lo
 
     return result;
   }
-  TIMEIT_END(quad_check);
 
+#ifdef DEBUG_TIME
+  TIMEIT_END(quad_check);
   TIMEIT_START(osd_create);
+#endif
 
   if (mmd->osd_eval == NULL) {
     osd_eval = create_osd_eval(bm, mesh);
@@ -4571,12 +4584,18 @@ static Mesh *mybmesh_do(Mesh *mesh, SmoothContourModifierData *mmd, float cam_lo
     osd_eval = mmd->osd_eval;
   }
 
+#ifdef DEBUG_TIME
   TIMEIT_END(osd_create);
+#endif
 
-  // (6.1) Initialization
+#ifdef DEBUG_TIME
   TIMEIT_START(vert_limit);
+#endif
+  // (6.1) Initialization
   verts_to_limit(bm, osd_eval);
+#ifdef DEBUG_TIME
   TIMEIT_END(vert_limit);
+#endif
   // Keep a copy of the quad mesh
   bm_orig = BM_mesh_copy(bm);
 
@@ -4620,29 +4639,45 @@ static Mesh *mybmesh_do(Mesh *mesh, SmoothContourModifierData *mmd, float cam_lo
     create_vert_mapping(&mesh_data);
 
     if (mmd->flag & MOD_SMOOTHCONTOUR_FF_SPLIT) {
+#ifdef DEBUG_TIME
       TIMEIT_START(split_bb_ff);
+#endif
       split_BB_FF_edges_thread_start(&mesh_data);
       // split_BB_FF_edges(&mesh_data);
+#ifdef DEBUG_TIME
       TIMEIT_END(split_bb_ff);
+#endif
       // printf("New verts: %d\n", new_vert_buffer.count);
     }
     // (6.2) Contour Insertion
 
     if (mmd->flag & MOD_SMOOTHCONTOUR_CUSP_D) {
+#ifdef DEBUG_TIME
       TIMEIT_START(cusp_detect);
+#endif
       cusp_detection(&mesh_data);
+#ifdef DEBUG_TIME
       TIMEIT_END(cusp_detect);
+#endif
     }
 
     if (mmd->flag & MOD_SMOOTHCONTOUR_FB_SPLIT) {
+#ifdef DEBUG_TIME
       TIMEIT_START(contour_insert);
+#endif
       contour_insertion(&mesh_data);
+#ifdef DEBUG_TIME
       TIMEIT_END(contour_insert);
+#endif
     }
     if (mmd->flag & MOD_SMOOTHCONTOUR_CUSP_I) {
+#ifdef DEBUG_TIME
       TIMEIT_START(cusp_insert);
+#endif
       cusp_insertion(&mesh_data);
+#ifdef DEBUG_TIME
       TIMEIT_END(cusp_insert);
+#endif
     }
 
     // (6.3) Radialization
@@ -4650,15 +4685,23 @@ static Mesh *mybmesh_do(Mesh *mesh, SmoothContourModifierData *mmd, float cam_lo
     mesh_data.radi_start_idx = BM_mesh_elem_count(bm, BM_VERT);
 
     if (mmd->flag & MOD_SMOOTHCONTOUR_RAD_I) {
+#ifdef DEBUG_TIME
       TIMEIT_START(radi_insert);
+#endif
       radial_insertion(&mesh_data);
+#ifdef DEBUG_TIME
       TIMEIT_END(radi_insert);
+#endif
     }
 
     if (mmd->flag & MOD_SMOOTHCONTOUR_RAD_FLIP) {
+#ifdef DEBUG_TIME
       TIMEIT_START(radi_flip);
+#endif
       radial_flip(&mesh_data);
+#ifdef DEBUG_TIME
       TIMEIT_END(radi_flip);
+#endif
     }
 
     // Recalculate normals
@@ -4666,9 +4709,13 @@ static Mesh *mybmesh_do(Mesh *mesh, SmoothContourModifierData *mmd, float cam_lo
 
     // (6.4) Optimization
     if (mmd->flag & MOD_SMOOTHCONTOUR_OPTI) {
+#ifdef DEBUG_TIME
       TIMEIT_START(opti);
+#endif
       optimization(&mesh_data);
+#ifdef DEBUG_TIME
       TIMEIT_END(opti);
+#endif
       // Recalculate normals
       recalc_face_normals(bm);
     }
@@ -4678,10 +4725,16 @@ static Mesh *mybmesh_do(Mesh *mesh, SmoothContourModifierData *mmd, float cam_lo
       select_C_verts(&mesh_data);
     }
 
+#ifdef DEBUG_TIME
     TIMEIT_START(debug_color);
+#endif
+#ifdef DEBUG_COLORIZE
     debug_colorize(bm, cam_loc);
     debug_colorize_radi(&mesh_data);
+#endif
+#ifdef DEBUG_TIME
     TIMEIT_END(debug_color);
+#endif
     BLI_ghash_free(mesh_data.vert_hash, NULL, NULL);
     BLI_buffer_free(&new_vert_buffer);
     BLI_buffer_free(&shifted_verts);
@@ -4768,9 +4821,11 @@ static void updateDepsgraph(ModifierData *md, const ModifierUpdateDepsgraphConte
 {
   SmoothContourModifierData *mmd = (SmoothContourModifierData *)md;
   if (mmd->camera_ob != NULL) {
-    DEG_add_object_relation(ctx->node, mmd->camera_ob, DEG_OB_COMP_TRANSFORM, "MyBmesh Modifier");
+    DEG_add_object_relation(
+        ctx->node, mmd->camera_ob, DEG_OB_COMP_TRANSFORM, "Smooth Contour Modifier");
   }
-  DEG_add_object_relation(ctx->node, ctx->object, DEG_OB_COMP_TRANSFORM, "MyBmesh Modifier");
+  DEG_add_object_relation(
+      ctx->node, ctx->object, DEG_OB_COMP_TRANSFORM, "Smooth Contour Modifier");
 }
 
 static bool dependsOnNormals(ModifierData *UNUSED(md))
